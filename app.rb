@@ -1,76 +1,159 @@
+require 'rubygems'
 require 'sinatra'
-require_relative 'config/database'
-require_relative 'models'
+require 'haml'
+require 'json'
 
-set :bind, '0.0.0.0'
-set :port, 8080
+user = {
+'augusto' => {password:'qwerty',uid:'landlord:00001'},
+'algo' => {password:'123',uid:'admin:0'},
+'giampaolo' => {password:'bonaldi',uid:'landlord:00002'},
+'marco' => {password:'sensi',uid:'landlord:00003'}
+}
 
-def configure_database
-  if ENV['RACK_ENV']=="production"
-    while !self.connect_to_database_prod
-      sleep 0.1
-    end
-  else
-    while !self.connect_to_database_test
-      sleep 0.1
-    end
-  end
-  puts "Connected to database"
-  puts "Create database..."
-  %x"rake db:create"
-  puts "Run migrations..."
-  %x"rake db:migrate"
-end
+landlord = {
+  'landlord:00001' => { 
+    exitname: 'augusto',
+    surname:  'ciuffoletti'},
+  'landlord:00002' => { 
+    name: 'giampaolo',
+    surname:  'bonaldi'},
+  'landlord:00003' => { 
+    name: 'marco',
+    surname:  'sensi'}
+}
 
-configure do
-  puts "Run app..."
+availability = {
+  "availability:00001" => { 
+    landlord: 'landlord:00001',
+    lat:'43.782415',
+    long: '11.244055',
+    startdate: '1481760000',
+    enddate: '1482537600'
+  },
+  "availability:00003" => { 
+    landlord: 'landlord:00001',
+    lat:'43.708067',
+    long: '10.405961',
+    startdate: '1481760000',
+    enddate: '1482537600'
+  }
+}
 
-  unless ENV["DATABASE_SERVICE_HOST"].nil? && ENV["DATABASE_TEST_SERVICE_HOST"].nil?
-    configure_database
-  end
-end
+property = {
+  "property:00001" => { 
+    landlord: 'landlord:00001',
+    lat:'43.782415',
+    long: '11.244055',
+    type: 'apartment'
+  },
+  "property:00002" => { 
+    landlord: 'landlord:00002',
+    lat:'43.708067',
+    long: '10.405961',
+    type: 'villa'
+  },
+  "property:00003" => { 
+    landlord: 'landlord:00003',
+    lat:'43.708067',
+    long: '10.405961',
+    type: 'loft'
+  }
+}
+
+request = {
+  "request:00001" => {
+    landlord: 'landlord:00001',
+    lat:'43.708067',
+    long: '10.405961',
+    startdate: '1481760000',
+    enddate: '1482537600'
+  },
+    "request:00002" => {
+    landlord: 'landlord:00002',
+    lat:'43.782415',
+    long: '11.244055',
+    startdate: '1481760000',
+    enddate: '1482537600'
+  }
+}
+
+enable :sessions
 
 get '/' do
-  puts "Servicing index request..."
-  erb :main
+  session["user"] ||= nil
+  haml :index
 end
 
-get '/keys' do
-  puts "Retrieving all keys"
-  a={}
-  KeyPair.all.each do |v|
-    a[v.key]=v.value
-  end
-  a.to_s
+get '/authenticate' do
+  haml :authenticate
 end
 
-get '/keys/:id' do
-  puts "Retrieving key #{params[:id]}"
-  if KeyPair.exists?(params[:id])
-    KeyPair.find(params[:id]).value
+post '/authenticate' do
+  if params[:psw] == user[params[:name]][:password]
+    session["user"] = user[params[:name]][:uid]
+    redirect '/'
   else
-    not_found "Key not found"
+    "401 Unauthorized"
   end
 end
 
-post '/keys/:id' do
-  puts "Updating key #{params[:id]} to #{params['value']}"
-  if KeyPair.exists?(params[:id])
-    KeyPair.update(params[:id], value: params['value'])
-    "Key updated"
-  else
-    KeyPair.create(key:params[:id],value:params['value']).save
-    "Key created"
-  end
+get '/bye' do
+  session["user"] = nil
+  haml :bye
 end
 
-delete '/keys/:id' do
-  puts "Deleting key #{params[:id]}"
-  if KeyPair.exists?(params[:id])
-    v=KeyPair.find(params[:id])
-    v.destroy
-    "Key deleted"
+get '/availability' do
+  if session["user"].nil?
+    "401 Unauthorized"
   else
-    "Key not found"
+    if not params[:uid].nil?
+      if availability.has_key?(params[:uid])
+        JSON.generate(availability[params[:uid]])
+      else
+        "404 Not Found"
+      end
+    else
+      body=JSON.generate(availability)
+    end
+  end 
+end
+
+get '/request' do
+  if session["user"].nil?
+    "401 Unauthorized"
+  else
+    if not params[:uid].nil?
+      if request.has_key?(params[:uid])
+        JSON.generate(request[params[:uid]])
+      else
+        "404 Not Found"
+      end
+    else
+      body=JSON.generate(request)
+    end
+  end 
+end
+
+get '/property' do
+  if session["user"].nil?
+    "401 Unauthorized"
+  else
+    if not params[:uid].nil?
+      if property.has_key?(params[:uid])
+        JSON.generate(property[params[:uid]])
+      else
+        "404 Not Found"
+      end
+    else
+      body=JSON.generate(property)
+    end
+  end 
+end
+
+get '/myself' do
+  if session["user"].nil?
+    "401 Unauthorized"
+  else
+    JSON.generate(landlord[session[:user]])
   end
 end
